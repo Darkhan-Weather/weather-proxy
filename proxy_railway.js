@@ -28,6 +28,46 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Weather.gov.mn API proxy: /weather or /weather?station=508
+  if (req.url === '/weather' || req.url.startsWith('/weather?')) {
+    const urlObj = new URL(req.url, 'http://localhost');
+    const station = urlObj.searchParams.get('station') || '508';
+    const apiKey = 'wapi_free_0e874f4aaef44fa4bb2c81122c85ecee';
+    const targetUrl = `https://api.weather.gov.mn/api/v1/weather/current?station=${station}`;
+
+    console.log(`[${new Date().toLocaleTimeString()}] weather.gov.mn станц ${station} дата татаж байна...`);
+
+    const options = {
+      hostname: 'api.weather.gov.mn',
+      port: 443,
+      path: `/api/v1/weather/current?station=${station}`,
+      method: 'GET',
+      headers: {
+        'X-API-Key': apiKey,
+        'Accept': 'application/json',
+      }
+    };
+
+    const proxyReq = https.request(options, (proxyRes) => {
+      res.writeHead(proxyRes.statusCode, { 'Content-Type': 'application/json' });
+      const enc = proxyRes.headers['content-encoding'];
+      if (enc === 'gzip') {
+        proxyRes.pipe(zlib.createGunzip()).pipe(res);
+      } else {
+        proxyRes.pipe(res);
+      }
+    });
+
+    proxyReq.on('error', (e) => {
+      console.error('weather.gov.mn алдаа:', e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    });
+
+    proxyReq.end();
+    return;
+  }
+
   // Station routes: /530 or /531
   const match = req.url.match(/^\/(\d+)/);
   const stationId = match ? match[1] : null;
@@ -35,7 +75,7 @@ const server = http.createServer((req, res) => {
 
   if (!target) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Station not found. Use /530 or /531' }));
+    res.end(JSON.stringify({ error: 'Station not found. Use /530, /531, or /weather' }));
     return;
   }
 
@@ -77,4 +117,5 @@ server.listen(PORT, () => {
   console.log(`✅ Proxy сервер ажиллаж байна: port ${PORT}`);
   console.log(`📊 Дархан: /530`);
   console.log(`📊 Шарын гол: /531`);
+  console.log(`🌤️ weather.gov.mn: /weather`);
 });
